@@ -1,54 +1,51 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'services/firebase_service.dart';
 
 class GraphScreen extends StatefulWidget {
+  const GraphScreen({super.key});
+
   @override
-  _GraphScreenState createState() => _GraphScreenState();
+  State<GraphScreen> createState() => _GraphScreenState();
 }
 
 class _GraphScreenState extends State<GraphScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  
-  // Rolling buffers for each sensor
-  List<FlSpot> _suhuSpots = [];
-  List<FlSpot> _phSpots = [];
-  List<FlSpot> _ppmSpots = [];
-  
+  final FirebaseService _firebase = FirebaseService();
+
+  // Rolling buffers (max 20 points)
+  final List<FlSpot> _suhuSpots = [];
+  final List<FlSpot> _phSpots = [];
+  final List<FlSpot> _ppmSpots = [];
   int _suhuCount = 0;
   int _phCount = 0;
   int _ppmCount = 0;
-
-  final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    
-    // Listen to realtime updates
-    _db.child('realtime/suhu').onValue.listen((event) {
-      double val = event.snapshot.value as double? ?? 0;
+    _listenToSensors();
+  }
+
+  void _listenToSensors() {
+    _firebase.getSuhuStream().listen((value) {
       setState(() {
-        _suhuSpots.add(FlSpot(_suhuCount.toDouble(), val));
+        _suhuSpots.add(FlSpot(_suhuCount.toDouble(), value));
         _suhuCount++;
         if (_suhuSpots.length > 20) _suhuSpots.removeAt(0);
       });
     });
-    
-    _db.child('realtime/ph').onValue.listen((event) {
-      double val = event.snapshot.value as double? ?? 0;
+    _firebase.getPhStream().listen((value) {
       setState(() {
-        _phSpots.add(FlSpot(_phCount.toDouble(), val));
+        _phSpots.add(FlSpot(_phCount.toDouble(), value));
         _phCount++;
         if (_phSpots.length > 20) _phSpots.removeAt(0);
       });
     });
-    
-    _db.child('realtime/mq').onValue.listen((event) {
-      int val = event.snapshot.value as int? ?? 0;
+    _firebase.getPpmStream().listen((value) {
       setState(() {
-        _ppmSpots.add(FlSpot(_ppmCount.toDouble(), val.toDouble()));
+        _ppmSpots.add(FlSpot(_ppmCount.toDouble(), value.toDouble()));
         _ppmCount++;
         if (_ppmSpots.length > 20) _ppmSpots.removeAt(0);
       });
@@ -65,11 +62,11 @@ class _GraphScreenState extends State<GraphScreen> with SingleTickerProviderStat
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Sensor Graphs'),
+        title: const Text('Grafik Sensor'),
         bottom: TabBar(
           controller: _tabController,
-          tabs: [
-            Tab(text: 'Suhu (°C)'),
+          tabs: const [
+            Tab(text: 'Suhu'),
             Tab(text: 'pH'),
             Tab(text: 'PPM'),
           ],
@@ -88,21 +85,14 @@ class _GraphScreenState extends State<GraphScreen> with SingleTickerProviderStat
 
   Widget _buildLineChart(List<FlSpot> spots, Color color, String title) {
     if (spots.isEmpty) {
-      return Center(child: Text('Waiting for sensor data...'));
+      return const Center(child: Text('Menunggu data sensor...'));
     }
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: LineChart(
         LineChartData(
-          gridData: FlGridData(show: true),
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(showTitles: true, reservedSize: 40),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(showTitles: true, reservedSize: 30),
-            ),
-          ),
+          gridData: const FlGridData(show: true),
+          titlesData: const FlTitlesData(show: true),
           borderData: FlBorderData(show: true),
           lineBarsData: [
             LineChartBarData(
@@ -110,8 +100,7 @@ class _GraphScreenState extends State<GraphScreen> with SingleTickerProviderStat
               isCurved: false,
               color: color,
               barWidth: 2,
-              dotData: FlDotData(show: true),
-              belowBarData: BarAreaData(show: false),
+              dotData: const FlDotData(show: true),
             ),
           ],
         ),
