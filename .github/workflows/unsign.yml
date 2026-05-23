@@ -15,30 +15,36 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.6'   # change to your Flutter version if needed
+          flutter-version: '3.19.6'   # compatible with fl_chart 0.70.2
           channel: 'stable'
+
+      # Remove the android folder completely – it’s not needed for iOS
+      - name: Remove Android folder (to avoid embedding v2 error)
+        run: rm -rf android
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Generate iOS project (if missing)
+      # Generate iOS project if missing
+      - name: Generate iOS project
         run: flutter create --platforms=ios .
 
-      - name: Build with xcodebuild (no code signing)
+      # Copy Firebase config (you must have this file in your repo)
+      # If you don't have it, download GoogleService-Info.plist from Firebase Console
+      # and place it in ios/Runner/ before committing.
+      - name: Ensure GoogleService-Info.plist exists
         run: |
-          cd ios
-          xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release -sdk iphoneos \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-          cd ..
+          if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
+            echo "ERROR: Missing ios/Runner/GoogleService-Info.plist"
+            echo "Download it from Firebase Console and commit it."
+            exit 1
+          fi
 
-      - name: Locate .app bundle
-        run: |
-          find build -name "Runner.app" -type d
-          # The .app is usually at build/ios/iphoneos/Runner.app
+      # Build unsigned IPA using Flutter’s built-in command (simpler)
+      - name: Build iOS app (unsigned)
+        run: flutter build ios --release --no-codesign
 
+      # Package .app into .ipa
       - name: Create IPA archive
         run: |
           mkdir -p Payload
