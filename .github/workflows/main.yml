@@ -18,11 +18,12 @@ jobs:
           channel: 'stable'
           cache: false
 
+      # FIX: Explicitly set the org and project name to force com.example.biogas
       - name: Generate Native Platforms
         run: |
           rm -rf ios/
           rm -rf android/
-          flutter create --platforms=android,ios .
+          flutter create --org com.example --project-name biogas --platforms=android,ios .
 
       - name: Install dependencies
         run: flutter pub get
