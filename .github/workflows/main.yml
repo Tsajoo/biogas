@@ -12,26 +12,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Flutter (3.19.6)
+      # Uses latest stable Flutter to natively support Swift Package Manager (SPM)
+      - name: Setup Flutter (Latest Stable)
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.6'
           channel: 'stable'
           cache: false
 
-      # 1. Generate both native folders FIRST so plugins have places to latch onto
       - name: Generate Native Platforms
         run: flutter create --platforms=android,ios .
 
-      # 2. Pull dependencies now that native project directories exist
       - name: Install dependencies
         run: flutter pub get
 
-      # 3. Force Flutter to generate the ephemeral Swift Package files required by Xcode
-      - name: Prepare iOS SPM plugins
-        run: flutter build ios --config-only
-
-      # 4. Inject the Firebase plist placeholder before compiling
       - name: Ensure GoogleService-Info.plist exists (placeholder)
         run: |
           mkdir -p ios/Runner
@@ -57,18 +50,16 @@ jobs:
           EOF
           fi
 
-      # 5. Build the application binaries without codesigning
+      # Triggers SPM resolution automatically before building
       - name: Build unsigned iOS app
         run: flutter build ios --release --no-codesign
 
-      # 6. Bundle the payload for TrollStore installation
       - name: Create IPA archive
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
           zip -r biogas.ipa Payload/
 
-      # 7. Upload the final artifact
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
