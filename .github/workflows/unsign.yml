@@ -15,36 +15,25 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.6'   # compatible with fl_chart 0.70.2
+          flutter-version: '3.19.6'
           channel: 'stable'
-
-      # Remove the android folder completely – it’s not needed for iOS
-      - name: Remove Android folder (to avoid embedding v2 error)
-        run: rm -rf android
 
       - name: Install dependencies
         run: flutter pub get
 
-      # Generate iOS project if missing
+      # Remove the android folder to avoid Android embedding v2 error
+      - name: Remove android folder
+        run: rm -rf android
+
+      # Generate iOS project (if missing)
       - name: Generate iOS project
         run: flutter create --platforms=ios .
 
-      # Copy Firebase config (you must have this file in your repo)
-      # If you don't have it, download GoogleService-Info.plist from Firebase Console
-      # and place it in ios/Runner/ before committing.
-      - name: Ensure GoogleService-Info.plist exists
-        run: |
-          if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
-            echo "ERROR: Missing ios/Runner/GoogleService-Info.plist"
-            echo "Download it from Firebase Console and commit it."
-            exit 1
-          fi
-
-      # Build unsigned IPA using Flutter’s built-in command (simpler)
-      - name: Build iOS app (unsigned)
+      # Build the iOS app without code signing
+      - name: Build unsigned iOS app
         run: flutter build ios --release --no-codesign
 
-      # Package .app into .ipa
+      # Package the .app into an .ipa
       - name: Create IPA archive
         run: |
           mkdir -p Payload
