@@ -18,6 +18,7 @@ jobs:
           channel: 'stable'
           cache: false
 
+      # Clean slate generation
       - name: Generate Native Platforms
         run: |
           rm -rf ios/
@@ -66,9 +67,9 @@ jobs:
           </plist>
           EOF
 
-      # Generates the target Podfile configuration
+      # Added --no-codesign here so it generates configurations without searching for Apple profiles
       - name: Generate Podfile
-        run: flutter build ios --config-only
+        run: flutter build ios --config-only --no-codesign
         
       # Fixes the Xcode 16 strict non-modular header issue with Firebase
       - name: Fix Xcode 16 Non-Modular Headers
