@@ -21,30 +21,32 @@ jobs:
           channel: 'stable'
           cache: false
 
-      # ── 3. Regenerate native platforms ─────────────────────────────────────
-      # --org com.example --project-name biogas → bundle ID = com.example.biogas
-      # This matches your Firebase project exactly.
+      # ── 3. Disable Swift Package Manager ───────────────────────────────────
+      #
+      #  Flutter 3.44 enables SPM by default. firebase_core and
+      #  firebase_database do not yet support SPM and fall back to
+      #  CocoaPods — but in fallback mode they still trigger the
+      #  non-modular header error differently. Disabling SPM globally
+      #  forces a clean CocoaPods-only build path.
+      #
+      - name: Disable Swift Package Manager
+        run: flutter config --no-enable-swift-package-manager
+
+      # ── 4. Regenerate native platforms ─────────────────────────────────────
+      # bundle ID = com.example.biogas — matches your Firebase project
       - name: Regenerate iOS & Android
         run: |
           rm -rf ios/ android/
           flutter create --org com.example --project-name biogas --platforms=android,ios .
 
-      # ── 4. Patch project.pbxproj BEFORE Flutter reads it ───────────────────
+      # ── 5. Patch project.pbxproj — disable signing ─────────────────────────
       #
-      #  ROOT CAUSE OF "Development Team required" ERROR:
-      #  Flutter's Dart tooling reads project.pbxproj itself and throws this
-      #  error before invoking xcodebuild. Setting CODE_SIGNING_ALLOWED=NO
-      #  in every build configuration bypasses the check entirely.
+      #  Flutter's Dart tooling reads project.pbxproj and throws
+      #  "Development Team required" before calling xcodebuild.
+      #  Setting CODE_SIGNING_ALLOWED=NO in every config block
+      #  bypasses that check entirely.
       #
-      #  ROOT CAUSE OF 47KB / "unable to locate main binary" ERROR:
-      #  In the previous workflow, we called xcodebuild directly. This skips
-      #  Flutter's `flutter assemble` step which compiles Dart to native binary.
-      #  The app bundle was just an empty shell with no executable inside.
-      #  FIX: We use `flutter build ios --release --no-codesign` which runs
-      #  assemble first, then xcodebuild. We just need pbxproj patched so
-      #  Flutter does not bail out on the signing check before it gets there.
-      #
-      - name: Patch project.pbxproj — disable signing
+      - name: Patch project.pbxproj
         run: |
           python3 - <<'PYEOF'
           import re, pathlib
@@ -52,7 +54,7 @@ jobs:
           pbx = pathlib.Path("ios/Runner.xcodeproj/project.pbxproj")
           txt = pbx.read_text()
 
-          def patch_config_block(match):
+          def patch_block(match):
               block = match.group(0)
               overrides = {
                   "CODE_SIGNING_ALLOWED":           "NO",
@@ -71,116 +73,167 @@ jobs:
                       )
               return block
 
-          txt = re.sub(r'buildSettings = \{[^}]*\}', patch_config_block, txt, flags=re.DOTALL)
+          txt = re.sub(r'buildSettings = \{[^}]*\}', patch_block, txt, flags=re.DOTALL)
           txt = re.sub(r'ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;', txt)
-
           pbx.write_text(txt)
           print("pbxproj patched OK")
           PYEOF
 
-      # ── 5. Patch Info.plist — ATS + background modes ───────────────────────
+      # ── 6. Patch Info.plist ────────────────────────────────────────────────
       #
-      #  ios/ is recreated every run so we must re-apply these every time.
-      #  Without NSAllowsArbitraryLoads, Firebase HTTPS calls silently fail
-      #  on jailbroken iOS producing a white screen on launch.
+      #  ios/ is recreated every run — re-apply ATS fix each time.
+      #  Without NSAllowsArbitraryLoads, Firebase HTTPS calls silently
+      #  fail on jailbroken iOS and the app shows a white screen.
       #
       - name: Patch Info.plist
         run: |
           python3 - <<'PYEOF'
           import plistlib, pathlib
 
-          plist_path = pathlib.Path("ios/Runner/Info.plist")
-          with plist_path.open("rb") as f:
+          p = pathlib.Path("ios/Runner/Info.plist")
+          with p.open("rb") as f:
               data = plistlib.load(f)
 
           data.setdefault("NSAppTransportSecurity", {})
           data["NSAppTransportSecurity"]["NSAllowsArbitraryLoads"] = True
 
           modes = data.setdefault("UIBackgroundModes", [])
-          for mode in ["fetch", "remote-notification"]:
-              if mode not in modes:
-                  modes.append(mode)
+          for m in ["fetch", "remote-notification"]:
+              if m not in modes:
+                  modes.append(m)
 
-          with plist_path.open("wb") as f:
+          with p.open("wb") as f:
               plistlib.dump(data, f, fmt=plistlib.FMT_XML)
-
           print("Info.plist patched OK")
           PYEOF
 
-      # ── 6. Install pub dependencies ────────────────────────────────────────
-      - name: Install Flutter dependencies
+      # ── 7. Install pub dependencies ────────────────────────────────────────
+      - name: Flutter pub get
         run: flutter pub get
 
-      # ── 7. Configure Podfile ───────────────────────────────────────────────
-      - name: Configure Podfile
+      # ── 8. Write complete Podfile ──────────────────────────────────────────
+      #
+      #  ROOT CAUSE OF NON-MODULAR HEADER ERROR:
+      #  Our previous approach used `sed` to strip Flutter's post_install
+      #  block then appended our own. This is fragile — sed matches the
+      #  first `^end` line it finds, which may be an inner `end` inside
+      #  the flutter_additional_ios_build_settings helper, leaving a
+      #  broken or duplicate post_install block that pod install ignores.
+      #
+      #  FIX: We write the ENTIRE Podfile from scratch with Python so
+      #  there is exactly one post_install block, correctly structured,
+      #  with CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES=YES
+      #  applied to every target and every configuration.
+      #
+      - name: Write Podfile
         run: |
-          sed -i '' '/^post_install do |installer|/,/^end$/d' ios/Podfile
+          python3 - <<'PYEOF'
+          import pathlib
 
-          cat << 'EOF' >> ios/Podfile
+          podfile = pathlib.Path("ios/Podfile")
+
+          content = r"""
+          # Auto-generated by CI — do not edit manually.
+          platform :ios, '13.0'
+
+          ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+          project 'Runner', {
+            'Debug'   => :debug,
+            'Profile' => :release,
+            'Release' => :release,
+          }
+
+          def flutter_root
+            generated = File.expand_path(
+              File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__
+            )
+            raise "#{generated} must exist. Run flutter pub get first." unless File.exist?(generated)
+            File.foreach(generated) do |line|
+              m = line.match(/FLUTTER_ROOT\=(.*)/)
+              return m[1].strip if m
+            end
+            raise "FLUTTER_ROOT not found in #{generated}."
+          end
+
+          require File.expand_path(
+            File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root
+          )
+
+          flutter_ios_podfile_setup
+
+          target 'Runner' do
+            use_frameworks!
+            use_modular_headers!
+
+            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+            target 'RunnerTests' do
+              inherit! :search_paths
+            end
+          end
 
           post_install do |installer|
             installer.pods_project.targets.each do |target|
               flutter_additional_ios_build_settings(target)
+
               target.build_configurations.each do |config|
+                # ── NON-MODULAR HEADER FIX ──────────────────────────────────
+                # firebase_database and firebase_core include Firebase.h which
+                # is a non-modular header. Without this flag Xcode treats it
+                # as an error when use_modular_headers! is active globally.
                 config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
-                config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+
+                # ── SIGNING STRIP ───────────────────────────────────────────
+                config.build_settings['CODE_SIGNING_ALLOWED']  = 'NO'
                 config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
-                config.build_settings['CODE_SIGN_IDENTITY'] = ''
+                config.build_settings['CODE_SIGN_IDENTITY']    = ''
+
+                # ── DEPLOYMENT TARGET ───────────────────────────────────────
+                # Suppress "target below minimum" warnings from Firebase pods
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
               end
             end
           end
-          EOF
+          """.strip()
 
-      # ── 8. Pod install ─────────────────────────────────────────────────────
-      - name: Pod install
-        run: cd ios && pod install --repo-update
+          podfile.write_text(content)
+          print("Podfile written OK")
+          PYEOF
 
-      # ── 9. Build with Flutter (compiles Dart binary + calls xcodebuild) ────
+      # ── 9. Build ───────────────────────────────────────────────────────────
       #
-      #  IMPORTANT: Do NOT replace this with a raw xcodebuild call.
-      #  flutter build ios runs flutter assemble first, which compiles the
-      #  Dart code into a native binary and embeds it into the app bundle.
-      #  Calling xcodebuild directly skips this step and produces a 47kb
-      #  empty shell with no main binary (parse error 303).
+      #  flutter build ios runs `flutter assemble` (Dart → ARM binary) then
+      #  xcodebuild. Do NOT replace this with a raw xcodebuild call — that
+      #  skips assemble and produces a 47kb empty shell (parse error 303).
+      #
+      #  Flutter will run its own pod install internally here. Our Podfile
+      #  written in Step 8 is what it will use, so the post_install block
+      #  with the non-modular header fix will run at that point.
       #
       - name: Build unsigned app
         run: flutter build ios --release --no-codesign
 
-      # ── 10. Verify Runner.app has a real binary ────────────────────────────
-      - name: Verify binary exists in app bundle
+      # ── 10. Verify binary ─────────────────────────────────────────────────
+      - name: Verify Runner.app binary
         run: |
           APP="build/ios/iphoneos/Runner.app"
-          BINARY="$APP/Runner"
+          BIN="$APP/Runner"
+          [ -d "$APP" ] || { echo "Runner.app missing"; exit 1; }
+          [ -f "$BIN" ] || { echo "Binary missing from bundle"; ls -lah "$APP"; exit 1; }
+          BIN_BYTES=$(stat -f%z "$BIN")
+          echo "App: $(du -sh $APP | cut -f1)  Binary: $(du -sh $BIN | cut -f1)  (${BIN_BYTES} bytes)"
+          [ "$BIN_BYTES" -gt 1000000 ] || echo "WARNING: binary suspiciously small"
 
-          if [ ! -d "$APP" ]; then
-            echo "Runner.app not found at $APP"
-            exit 1
-          fi
-
-          if [ ! -f "$BINARY" ]; then
-            echo "Main binary missing from bundle"
-            ls -lah "$APP"
-            exit 1
-          fi
-
-          SIZE=$(du -sh "$APP" | cut -f1)
-          BIN_SIZE=$(du -sh "$BINARY" | cut -f1)
-          echo "Runner.app: $SIZE | Binary: $BIN_SIZE"
-
-          BIN_BYTES=$(stat -f%z "$BINARY")
-          if [ "$BIN_BYTES" -lt 1000000 ]; then
-            echo "Warning: binary is suspiciously small (${BIN_BYTES} bytes) — check build logs"
-          fi
-
-      # ── 11. Package as IPA ─────────────────────────────────────────────────
+      # ── 11. Package IPA ───────────────────────────────────────────────────
       - name: Package IPA
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
           zip -r biogas.ipa Payload/
-          echo "Final IPA: $(du -sh biogas.ipa)"
+          echo "IPA: $(du -sh biogas.ipa)"
 
-      # ── 12. Upload artifact ────────────────────────────────────────────────
+      # ── 12. Upload ────────────────────────────────────────────────────────
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
