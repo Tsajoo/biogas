@@ -12,33 +12,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Flutter
+      - name: Setup Flutter (3.19.6)
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'   # change to your Flutter version if needed
+          flutter-version: '3.19.6'
           channel: 'stable'
+          cache: false   # disable cache to ensure the exact version is used
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Generate iOS project (if missing)
+      # Remove android folder to avoid Android embedding v2 error
+      - name: Remove android folder
+        run: rm -rf android
+
+      # Generate iOS project (if missing)
+      - name: Generate iOS project
         run: flutter create --platforms=ios .
 
-      - name: Build with xcodebuild (no code signing)
-        run: |
-          cd ios
-          xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release -sdk iphoneos \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-          cd ..
+      # Build unsigned iOS app
+      - name: Build iOS app (unsigned)
+        run: flutter build ios --release --no-codesign
 
-      - name: Locate .app bundle
-        run: |
-          find build -name "Runner.app" -type d
-          # The .app is usually at build/ios/iphoneos/Runner.app
-
+      # Create IPA archive
       - name: Create IPA archive
         run: |
           mkdir -p Payload
