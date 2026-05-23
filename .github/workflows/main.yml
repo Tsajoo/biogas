@@ -17,24 +17,126 @@ jobs:
         with:
           flutter-version: '3.19.6'
           channel: 'stable'
-          cache: false   # disable cache to ensure the exact version is used
+          cache: false
+
+      # Create a complete Android v2 embedding project to satisfy firebase_core
+      - name: Create mock Android v2 embedding
+        run: |
+          mkdir -p android/app/src/main
+          cat > android/app/build.gradle << 'EOF'
+          def localProperties = new Properties()
+          def localPropertiesFile = rootProject.file('local.properties')
+          if (localPropertiesFile.exists()) {
+              localPropertiesFile.withReader('UTF-8') { reader ->
+                  localProperties.load(reader)
+              }
+          }
+          def flutterRoot = localProperties.getProperty('flutter.sdk')
+          if (flutterRoot == null) {
+              throw new GradleException("Flutter SDK not found.")
+          }
+          apply plugin: 'com.android.application'
+          apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+          android {
+              compileSdk 34
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+              defaultConfig {
+                  applicationId "com.example.biogas"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.debug
+                  }
+              }
+          }
+          flutter {
+              source '../..'
+          }
+          EOF
+          cat > android/app/src/main/AndroidManifest.xml << 'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.example.biogas">
+              <application android:label="biogas" android:name="${applicationName}">
+                  <activity android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > android/build.gradle << 'EOF'
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:7.4.2'
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.buildDir = '../build'
+          subprojects {
+              project.buildDir = "${rootProject.buildDir}/${project.name}"
+          }
+          subprojects {
+              project.evaluationDependsOn(':app')
+          }
+          tasks.register("clean", Delete) {
+              delete rootProject.buildDir
+          }
+          EOF
+          echo "flutter.sdk=${{ runner.tool_cache }}/flutter/3.19.6-stable" > android/local.properties
 
       - name: Install dependencies
         run: flutter pub get
 
-      # Remove android folder to avoid Android embedding v2 error
-      - name: Remove android folder
-        run: rm -rf android
-
-      # Generate iOS project (if missing)
-      - name: Generate iOS project
+      - name: Generate iOS project (if missing)
         run: flutter create --platforms=ios .
 
-      # Build unsigned iOS app
-      - name: Build iOS app (unsigned)
+      - name: Ensure GoogleService-Info.plist exists (placeholder)
+        run: |
+          mkdir -p ios/Runner
+          if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
+            cat > ios/Runner/GoogleService-Info.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>IS_ADS_ENABLED</key><false/>
+            <key>IS_ANALYTICS_ENABLED</key><false/>
+            <key>IS_APPINVITE_ENABLED</key><false/>
+            <key>IS_GCM_ENABLED</key><false/>
+            <key>IS_SIGNIN_ENABLED</key><false/>
+            <key>GOOGLE_APP_ID</key><string>1:123456789:ios:abcdef</string>
+            <key>GCM_SENDER_ID</key><string>123456789</string>
+            <key>PLIST_VERSION</key><string>1</string>
+            <key>BUNDLE_ID</key><string>com.example.biogas</string>
+            <key>PROJECT_ID</key><string>biogas11</string>
+            <key>STORAGE_BUCKET</key><string>biogas11.appspot.com</string>
+          </dict>
+          </plist>
+          EOF
+          fi
+
+      - name: Build unsigned iOS app
         run: flutter build ios --release --no-codesign
 
-      # Create IPA archive
       - name: Create IPA archive
         run: |
           mkdir -p Payload
