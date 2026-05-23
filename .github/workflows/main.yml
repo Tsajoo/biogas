@@ -122,7 +122,7 @@ jobs:
           PYEOF
 
       # ------------------------------------------------------------------
-      # 4. Write the Podfile (NO use_modular_headers! + correct settings)
+      # 4. Write the Podfile – FIX INCLUDED HERE
       # ------------------------------------------------------------------
       - name: Write Podfile
         run: |
@@ -161,15 +161,21 @@ jobs:
           end
 
           post_install do |installer|
+            # 1. First, set the flag on the Pods project itself (most important)
+            installer.pods_project.build_configurations.each do |config|
+              config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+            end
+
+            # 2. Then apply it to every pod target (belt and suspenders)
             installer.pods_project.targets.each do |target|
               flutter_additional_ios_build_settings(target)
               target.build_configurations.each do |config|
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
-                # Disable signing (needed for TrollStore unsigned IPA)
+                # Disable signing
                 config.build_settings['CODE_SIGNING_ALLOWED']       = 'NO'
                 config.build_settings['CODE_SIGNING_REQUIRED']      = 'NO'
                 config.build_settings['CODE_SIGN_IDENTITY']         = ''
-                # Fix "non-modular header" error inside Firebase modules
+                # Allow Firebase's non-modular header
                 config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
               end
             end
