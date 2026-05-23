@@ -1,12 +1,12 @@
-name: Build iOS IPA
+name: Build Unsigned IPA (for TrollStore)
 
 on:
+  workflow_dispatch:  # manual trigger only
   push:
     branches: [ main ]
-  workflow_dispatch:   # allows manual run
 
 jobs:
-  build:
+  build-ipa:
     runs-on: macos-latest
     steps:
       - name: Checkout code
@@ -15,18 +15,19 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'   # adjust to your Flutter version
+          flutter-version: '3.24.0'   # adjust to your project's Flutter version
           channel: 'stable'
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Clean and build iOS (no code signing)
+      # Force the iOS build to skip code signing entirely
+      - name: Build iOS app (unsigned)
         run: |
-          flutter clean
           flutter build ios --release --no-codesign
 
-      - name: Create IPA from .app
+      # Manually create an unsigned IPA from the .app bundle
+      - name: Create IPA archive
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
@@ -35,5 +36,5 @@ jobs:
       - name: Upload IPA as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: biogas-ipa
+          name: biogas-unsigned
           path: biogas.ipa
