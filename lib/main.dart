@@ -5,12 +5,42 @@ import 'package:fl_chart/fl_chart.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Initialize Firebase (make sure your google-services.json / GoogleService-Info.plist are configured)
-  await Firebase.initializeApp();
   
-  // Enable local persistence so data isn't lost offline
-  FirebaseDatabase.instance.setPersistenceEnabled(true);
-  FirebaseDatabase.instance.ref().keepSynced(true);
+  try {
+    // We pass your exact credentials directly via Dart code.
+    // This bypasses the Xcode file-linking issue entirely!
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: "AIzaSyC-siZ2Z3VQU3bbMjsfflauRzZRdjfiEKA",
+        appId: "1:25429940980:ios:45d0365544b4624c755ca1",
+        messagingSenderId: "25429940980",
+        projectId: "biogas11",
+        databaseURL: "https://biogas11-default-rtdb.asia-southeast1.firebasedatabase.app",
+        storageBucket: "biogas11.firebasestorage.app",
+      ),
+    );
+    
+    // Enable local caching
+    FirebaseDatabase.instance.setPersistenceEnabled(true);
+    FirebaseDatabase.instance.ref().keepSynced(true);
+  } catch (e) {
+    // If anything fails, this forces an explicit error screen instead of a white freeze
+    runApp(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Text(
+              "Firebase Init Crash:\n$e", 
+              style: const TextStyle(color: Colors.red, fontSize: 16, fontWeight: FontWeight.bold),
+              textAlign: Center,
+            ),
+          ),
+        ),
+      ),
+    ));
+    return;
+  }
 
   runApp(const BiogasApp());
 }
@@ -88,7 +118,6 @@ class _MainScreenState extends State<MainScreen> {
 class RealtimeTab extends StatelessWidget {
   const RealtimeTab({super.key});
 
-  // Helper to safely parse Firebase numbers
   double _parse(dynamic value) {
     if (value == null) return 0.0;
     if (value is int) return value.toDouble();
@@ -182,13 +211,11 @@ class RealtimeTab extends StatelessWidget {
               return const Center(child: CircularProgressIndicator());
             }
 
-            // Extract Config Data
             final configMap = configSnap.data?.snapshot.value as Map<dynamic, dynamic>? ?? {};
             double suhuThreshold = _parse(configMap['suhuThreshold']);
             double ppmThreshold = _parse(configMap['ppmThreshold']);
             double phThreshold = _parse(configMap['phThreshold']);
 
-            // Extract Realtime Data
             final realtimeMap = realtimeSnap.data?.snapshot.value as Map<dynamic, dynamic>? ?? {};
             double suhu = _parse(realtimeMap['suhu']);
             double ppm = _parse(realtimeMap['ppm']);
@@ -218,7 +245,6 @@ class HistoryTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DatabaseEvent>(
-      // Listen to history node, limit to avoid massive downloads
       stream: FirebaseDatabase.instance.ref('history').limitToLast(100).onValue,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -230,9 +256,7 @@ class HistoryTab extends StatelessWidget {
           return const Center(child: Text("No history data available."));
         }
 
-        // Sort keys chronologically (Firebase Push IDs are sorted by time automatically)
         var keys = map.keys.toList()..sort();
-        // Reverse so the newest is at the top
         var reversedKeys = keys.reversed.toList();
 
         return ListView.builder(
@@ -273,7 +297,7 @@ class GraphTab extends StatefulWidget {
 }
 
 class _GraphTabState extends State<GraphTab> {
-  String selectedMetric = 'suhu'; // Default selected metric
+  String selectedMetric = 'suhu';
 
   double _parse(dynamic value) {
     if (value == null) return 0.0;
@@ -288,7 +312,6 @@ class _GraphTabState extends State<GraphTab> {
     return Column(
       children: [
         const SizedBox(height: 20),
-        // Selection Buttons
         Wrap(
           spacing: 10,
           children: [
@@ -300,18 +323,16 @@ class _GraphTabState extends State<GraphTab> {
             ChoiceChip(
               label: const Text("MQ (PPM)"),
               selected: selectedMetric == 'ppm',
-              onSelected: (val) => setState(() => selectedMetric = 'ppm'),
+              onSelected: (val) => setState(() => selectedMetric == 'ppm'),
             ),
             ChoiceChip(
               label: const Text("pH"),
               selected: selectedMetric == 'ph',
-              onSelected: (val) => setState(() => selectedMetric = 'ph'),
+              onSelected: (val) => setState(() => selectedMetric == 'ph'),
             ),
           ],
         ),
         const SizedBox(height: 20),
-        
-        // Graph
         Expanded(
           child: Container(
             padding: const EdgeInsets.only(right: 20, left: 10, bottom: 20, top: 20),
@@ -322,7 +343,6 @@ class _GraphTabState extends State<GraphTab> {
               boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
             ),
             child: StreamBuilder<DatabaseEvent>(
-              // Get the 20 newest values
               stream: FirebaseDatabase.instance.ref('history').limitToLast(20).onValue,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -334,9 +354,7 @@ class _GraphTabState extends State<GraphTab> {
                   return const Center(child: Text("Not enough data to graph"));
                 }
 
-                // Sort keys chronologically
                 var sortedKeys = map.keys.toList()..sort();
-                
                 List<FlSpot> spots = [];
                 double xIndex = 0;
 
@@ -353,7 +371,7 @@ class _GraphTabState extends State<GraphTab> {
                     titlesData: FlTitlesData(
                       topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                       rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)), // Hide index numbers on X axis
+                      bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     ),
                     borderData: FlBorderData(show: true, border: Border.all(color: Colors.grey.shade300)),
                     lineBarsData: [
