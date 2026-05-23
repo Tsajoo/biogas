@@ -60,8 +60,9 @@ jobs:
           cp -r build/ios/iphoneos/Runner.app Payload/
           zip -r biogas.ipa Payload/
 
-- name: Upload IPA
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
+          name: biogas-unsigned
           path: biogas.ipa
           archive: false
