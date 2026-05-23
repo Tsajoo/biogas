@@ -18,7 +18,6 @@ jobs:
           channel: 'stable'
           cache: false
 
-      # Clean slate generation
       - name: Generate Native Platforms
         run: |
           rm -rf ios/
@@ -28,7 +27,6 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # Injects your real Firebase configuration to fix the white screen crash
       - name: Inject Real GoogleService-Info.plist
         run: |
           mkdir -p ios/Runner
@@ -67,20 +65,43 @@ jobs:
           </plist>
           EOF
 
-      # Added --no-codesign here so it generates configurations without searching for Apple profiles
       - name: Generate Podfile
         run: flutter build ios --config-only --no-codesign
         
-      # Fixes the Xcode 16 strict non-modular header issue with Firebase
-      - name: Fix Xcode 16 Non-Modular Headers
+      - name: Fix Xcode 16 Non-Modular Headers (Pods & Runner)
         run: |
-          perl -pi -e "s/flutter_additional_ios_build_settings\(target\)/flutter_additional_ios_build_settings(target)\n      target.build_configurations.each do |config|\n        config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'\n      end/g" ios/Podfile
+          # 1. Strip out the default post_install block created by Flutter
+          sed -i '' '/post_install do |installer|/,/^end/d' ios/Podfile
+          
+          # 2. Append a robust custom post_install script to the Podfile
+          cat << 'EOF' >> ios/Podfile
+          
+          post_install do |installer|
+            # Apply fix to all Firebase and third-party CocoaPods
+            installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
+              target.build_configurations.each do |config|
+                config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+              end
+            end
+            
+            # Apply fix directly to the main Runner project so Xcode compiles smoothly
+            runner_project_path = File.expand_path("../Runner.xcodeproj", __FILE__)
+            runner_project = Xcodeproj::Project.open(runner_project_path)
+            runner_project.targets.each do |target|
+              if target.name == "Runner"
+                target.build_configurations.each do |config|
+                  config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+                end
+              end
+            end
+            runner_project.save
+          end
+          EOF
 
-      # Compiles the app securely with your database integration active
       - name: Build unsigned iOS app
         run: flutter build ios --release --no-codesign
 
-      # Packs the binary structure for TrollStore sideloading
       - name: Create IPA archive
         run: |
           mkdir -p Payload
