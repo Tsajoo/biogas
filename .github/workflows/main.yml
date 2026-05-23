@@ -64,6 +64,11 @@ jobs:
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.example.biogas">
               <application android:label="biogas" android:name="${applicationName}">
+                  
+                  <meta-data
+                      android:name="flutterEmbedding"
+                      android:value="2" />
+                      
                   <activity android:name=".MainActivity"
                       android:exported="true">
                       <intent-filter>
