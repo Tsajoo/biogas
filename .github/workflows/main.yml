@@ -29,7 +29,6 @@ jobs:
 
       # ------------------------------------------------------------------
       # 1. Create Xcode config files that disable ALL code signing.
-      #    This is far less error-prone than patching project.pbxproj.
       # ------------------------------------------------------------------
       - name: Create signing‑disabling xcconfig files
         run: |
@@ -50,9 +49,6 @@ jobs:
 
       # ------------------------------------------------------------------
       # 2. Place your GoogleService-Info.plist.
-      #    If you don't have it as a secret, create a dummy one so the
-      #    build doesn't fail. (Firebase will crash at runtime, but the
-      #    IPA will build.)
       # ------------------------------------------------------------------
       - name: Place GoogleService-Info.plist
         env:
@@ -105,7 +101,7 @@ jobs:
           fi
 
       # ------------------------------------------------------------------
-      # 3. Patch Info.plist (ATS + background modes) – safe and simple.
+      # 3. Patch Info.plist (ATS + background modes)
       # ------------------------------------------------------------------
       - name: Patch Info.plist
         run: |
@@ -169,9 +165,13 @@ jobs:
               flutter_additional_ios_build_settings(target)
               target.build_configurations.each do |config|
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+                # Disable signing (needed for TrollStore unsigned IPA)
                 config.build_settings['CODE_SIGNING_ALLOWED']       = 'NO'
                 config.build_settings['CODE_SIGNING_REQUIRED']      = 'NO'
                 config.build_settings['CODE_SIGN_IDENTITY']         = ''
+                # Fix "non-modular header" error inside Firebase modules
+                config.build_settings['DEFINES_MODULE'] = 'NO'
+                config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
               end
             end
           end
