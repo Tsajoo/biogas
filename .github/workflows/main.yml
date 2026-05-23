@@ -12,15 +12,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Uses latest stable Flutter to natively support Swift Package Manager (SPM)
-      - name: Setup Flutter (Latest Stable)
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: false
 
       - name: Generate Native Platforms
-        run: flutter create --platforms=android,ios .
+        run: |
+          rm -rf ios/
+          rm -rf android/
+          flutter create --platforms=android,ios .
 
       - name: Install dependencies
         run: flutter pub get
@@ -50,7 +52,16 @@ jobs:
           EOF
           fi
 
-      # Triggers SPM resolution automatically before building
+      # 1. This command generates the Podfile without triggering Xcode compilation yet
+      - name: Generate Podfile
+        run: flutter build ios --config-only
+        
+      # 2. Inject the CocoaPods patch to bypass Xcode 16 strict header rules
+      - name: Fix Xcode 16 Non-Modular Headers
+        run: |
+          perl -pi -e "s/flutter_additional_ios_build_settings\(target\)/flutter_additional_ios_build_settings(target)\n      target.build_configurations.each do |config|\n        config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'\n      end/g" ios/Podfile
+
+      # 3. Flutter notices the updated Podfile, automatically re-installs pods, and builds safely
       - name: Build unsigned iOS app
         run: flutter build ios --release --no-codesign
 
@@ -63,6 +74,5 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: biogas-unsigned
+          name: biogas.ipa
           path: biogas.ipa
-          archive: false
