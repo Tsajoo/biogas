@@ -19,12 +19,10 @@ void main() async {
       ),
     ).timeout(
       const Duration(seconds: 10),
-      onTimeout: () => throw Exception(
-          "Firebase init timed out — check network / ATS settings"),
+      onTimeout: () =>
+          throw Exception("Firebase init timed out — check network / ATS"),
     );
 
-    // FIX: Only keep specific paths synced, NOT the root.
-    // Syncing root ref causes a massive data fetch on startup = white screen hang.
     FirebaseDatabase.instance.setPersistenceEnabled(true);
     FirebaseDatabase.instance.ref('realtime').keepSynced(true);
     FirebaseDatabase.instance.ref('history').keepSynced(true);
@@ -32,15 +30,16 @@ void main() async {
   } catch (e) {
     runApp(MaterialApp(
       home: Scaffold(
+        backgroundColor: const Color(0xFFF5F0EB),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24.0),
             child: Text(
-              "Firebase Init Crash:\n$e",
+              "Startup Error:\n$e",
               style: const TextStyle(
-                  color: Colors.red,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold),
+                  color: Color(0xFFE07C7C),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600),
               textAlign: TextAlign.center,
             ),
           ),
@@ -53,6 +52,23 @@ void main() async {
   runApp(const BiogasApp());
 }
 
+// ── Pastel colour palette ────────────────────────────────────────────────────
+class AppColors {
+  static const bg         = Color(0xFFF7F4F0);       // warm off-white
+  static const card       = Color(0xFFFFFFFF);
+  static const green      = Color(0xFF7EC8A4);        // sage green
+  static const greenLight = Color(0xFFD6F0E4);
+  static const red        = Color(0xFFE8857A);        // soft coral
+  static const redLight   = Color(0xFFFCE0DE);
+  static const blue       = Color(0xFF85B4D4);        // sky blue
+  static const blueLight  = Color(0xFFD6EAF7);
+  static const peach      = Color(0xFFF5C49A);        // peach accent
+  static const peachLight = Color(0xFFFFF0E0);
+  static const text       = Color(0xFF3A3A3A);
+  static const textLight  = Color(0xFF8A8A8A);
+  static const divider    = Color(0xFFEAE6E1);
+}
+
 class BiogasApp extends StatelessWidget {
   const BiogasApp({super.key});
 
@@ -60,21 +76,30 @@ class BiogasApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Biogas Monitor',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.green,
-        scaffoldBackgroundColor: Colors.grey[100],
+        scaffoldBackgroundColor: AppColors.bg,
+        fontFamily: 'SF Pro Display',
+        colorScheme: ColorScheme.light(
+          primary: AppColors.green,
+          surface: AppColors.card,
+        ),
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          backgroundColor: AppColors.card,
+          selectedItemColor: AppColors.green,
+          unselectedItemColor: AppColors.textLight,
+          elevation: 0,
+          type: BottomNavigationBarType.fixed,
+        ),
       ),
       home: const MainScreen(),
     );
   }
 }
 
-// ==========================================
-// MAIN SCREEN (BOTTOM NAVIGATION)
-// ==========================================
+// ── Main screen ──────────────────────────────────────────────────────────────
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
-
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
@@ -82,142 +107,323 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _tabs = [
-    const RealtimeTab(),
-    const HistoryTab(),
-    const GraphTab(),
+  final List<Widget> _tabs = const [
+    RealtimeTab(),
+    HistoryTab(),
+    GraphTab(),
   ];
+
+  final List<String> _titles = ['Live Sensors', 'History', 'Graph'];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.bg,
       appBar: AppBar(
-        title: const Text("Biogas Sensor Monitor"),
-        backgroundColor: Colors.green[700],
-        foregroundColor: Colors.white,
+        backgroundColor: AppColors.bg,
+        elevation: 0,
+        centerTitle: false,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _titles[_currentIndex],
+              style: const TextStyle(
+                color: AppColors.text,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const Text(
+              'Biogas Monitor',
+              style: TextStyle(
+                color: AppColors.textLight,
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
       ),
       body: _tabs[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        selectedItemColor: Colors.green[700],
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.speed),
-            label: "Realtime",
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          color: AppColors.card,
+          border: Border(top: BorderSide(color: AppColors.divider, width: 1)),
+        ),
+        child: SafeArea(
+          child: BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: (i) => setState(() => _currentIndex = i),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            items: const [
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.sensors_outlined),
+                  activeIcon: Icon(Icons.sensors),
+                  label: 'Live'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.history_outlined),
+                  activeIcon: Icon(Icons.history),
+                  label: 'History'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.show_chart_outlined),
+                  activeIcon: Icon(Icons.show_chart),
+                  label: 'Graph'),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.history),
-            label: "History",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.show_chart),
-            label: "Graph",
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
-// ==========================================
-// 1. REALTIME SENSOR TAB
-// ==========================================
+// ── Shared helpers ───────────────────────────────────────────────────────────
+double _parse(dynamic value) {
+  if (value == null) return 0.0;
+  if (value is int) return value.toDouble();
+  if (value is double) return value;
+  if (value is String) return double.tryParse(value) ?? 0.0;
+  return 0.0;
+}
+
+// ── 1. Realtime Tab ──────────────────────────────────────────────────────────
 class RealtimeTab extends StatelessWidget {
   const RealtimeTab({super.key});
 
-  double _parse(dynamic value) {
-    if (value == null) return 0.0;
-    if (value is int) return value.toDouble();
-    if (value is double) return value;
-    if (value is String) return double.tryParse(value) ?? 0.0;
-    return 0.0;
-  }
-
-  void _editThreshold(
-      BuildContext context, String key, double currentValue) {
-    TextEditingController ctrl =
-        TextEditingController(text: currentValue.toString());
-    showDialog(
+  void _editThreshold(BuildContext context, String key, double current) {
+    final ctrl = TextEditingController(text: current.toStringAsFixed(1));
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text("Edit Threshold: $key"),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: "New Value"),
+      isScrollControlled: true,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 24,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 32,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              double? newValue = double.tryParse(ctrl.text);
-              if (newValue != null) {
-                FirebaseDatabase.instance
-                    .ref('config')
-                    .update({key: newValue});
-              }
-              Navigator.pop(ctx);
-            },
-            child: const Text("Save"),
-          ),
-        ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Edit Threshold',
+                style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.text)),
+            const SizedBox(height: 4),
+            Text(key,
+                style: const TextStyle(
+                    fontSize: 13, color: AppColors.textLight)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: ctrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              autofocus: true,
+              style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.text),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: AppColors.bg,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 14),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.green,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () {
+                  final v = double.tryParse(ctrl.text);
+                  if (v != null) {
+                    FirebaseDatabase.instance
+                        .ref('config')
+                        .update({key: v});
+                  }
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Save',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSensorCard(BuildContext context, String title, double value,
-      double threshold, String configKey) {
-    bool isBahaya = value > threshold;
-    return Card(
+  Widget _sensorCard(
+    BuildContext context, {
+    required String title,
+    required String unit,
+    required double value,
+    required double threshold,
+    required String configKey,
+    required Color color,
+    required Color bgColor,
+    required IconData icon,
+  }) {
+    final bool danger = value > threshold;
+    return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            Text(value.toStringAsFixed(1),
-                style: const TextStyle(
-                    fontSize: 36, fontWeight: FontWeight.w500)),
-            const SizedBox(height: 10),
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(vertical: 6, horizontal: 20),
-              decoration: BoxDecoration(
-                color: isBahaya ? Colors.red : Colors.green,
-                borderRadius: BorderRadius.circular(20),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 20),
               ),
-              child: Text(
-                isBahaya ? "BAHAYA" : "AMAN",
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(title,
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.text)),
               ),
-            ),
-            const Divider(height: 30),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("Threshold: ${threshold.toStringAsFixed(1)}",
-                    style: TextStyle(color: Colors.grey[700])),
-                IconButton(
-                  icon: const Icon(Icons.edit, color: Colors.blue),
-                  onPressed: () =>
-                      _editThreshold(context, configKey, threshold),
-                )
-              ],
-            )
-          ],
-        ),
+              // Status pill
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: danger ? AppColors.redLight : AppColors.greenLight,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  danger ? 'BAHAYA' : 'AMAN',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: danger ? AppColors.red : AppColors.green,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          // Big value
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                value.toStringAsFixed(1),
+                style: const TextStyle(
+                  fontSize: 42,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.text,
+                  letterSpacing: -1,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(unit,
+                    style: const TextStyle(
+                        fontSize: 16,
+                        color: AppColors.textLight,
+                        fontWeight: FontWeight.w500)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(height: 1, color: AppColors.divider),
+          const SizedBox(height: 12),
+          // Threshold row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.tune_outlined,
+                      size: 14, color: AppColors.textLight),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Threshold: ${threshold.toStringAsFixed(1)} $unit',
+                    style: const TextStyle(
+                        fontSize: 13, color: AppColors.textLight),
+                  ),
+                ],
+              ),
+              GestureDetector(
+                onTap: () => _editThreshold(context, configKey, threshold),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppColors.bg,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.edit_outlined,
+                          size: 13, color: AppColors.textLight),
+                      SizedBox(width: 4),
+                      Text('Edit',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textLight,
+                              fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -231,32 +437,55 @@ class RealtimeTab extends StatelessWidget {
           stream: FirebaseDatabase.instance.ref('realtime').onValue,
           builder: (context, realtimeSnap) {
             if (!configSnap.hasData || !realtimeSnap.hasData) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(
+                child: CircularProgressIndicator(
+                    color: AppColors.green, strokeWidth: 2),
+              );
             }
 
-            final configMap =
+            final cfg =
                 configSnap.data?.snapshot.value as Map<dynamic, dynamic>? ??
                     {};
-            double suhuThreshold = _parse(configMap['suhuThreshold']);
-            double ppmThreshold = _parse(configMap['ppmThreshold']);
-            double phThreshold = _parse(configMap['phThreshold']);
-
-            final realtimeMap =
+            final rt =
                 realtimeSnap.data?.snapshot.value as Map<dynamic, dynamic>? ??
                     {};
-            double suhu = _parse(realtimeMap['suhu']);
-            double ppm = _parse(realtimeMap['ppm']);
-            double ph = _parse(realtimeMap['ph']);
 
             return ListView(
-              padding: const EdgeInsets.only(top: 10, bottom: 20),
+              padding: const EdgeInsets.only(top: 8, bottom: 24),
               children: [
-                _buildSensorCard(
-                    context, "Suhu (°C)", suhu, suhuThreshold, "suhuThreshold"),
-                _buildSensorCard(context, "MQ Sensor (PPM)", ppm, ppmThreshold,
-                    "ppmThreshold"),
-                _buildSensorCard(
-                    context, "pH", ph, phThreshold, "phThreshold"),
+                _sensorCard(
+                  context,
+                  title: 'Temperature',
+                  unit: '°C',
+                  value: _parse(rt['suhu']),
+                  threshold: _parse(cfg['suhuThreshold']),
+                  configKey: 'suhuThreshold',
+                  color: AppColors.peach,
+                  bgColor: AppColors.peachLight,
+                  icon: Icons.thermostat_outlined,
+                ),
+                _sensorCard(
+                  context,
+                  title: 'Gas (MQ Sensor)',
+                  unit: 'PPM',
+                  value: _parse(rt['ppm']),
+                  threshold: _parse(cfg['ppmThreshold']),
+                  configKey: 'ppmThreshold',
+                  color: AppColors.blue,
+                  bgColor: AppColors.blueLight,
+                  icon: Icons.air_outlined,
+                ),
+                _sensorCard(
+                  context,
+                  title: 'pH Level',
+                  unit: 'pH',
+                  value: _parse(rt['ph']),
+                  threshold: _parse(cfg['phThreshold']),
+                  configKey: 'phThreshold',
+                  color: AppColors.green,
+                  bgColor: AppColors.greenLight,
+                  icon: Icons.science_outlined,
+                ),
               ],
             );
           },
@@ -266,54 +495,107 @@ class RealtimeTab extends StatelessWidget {
   }
 }
 
-// ==========================================
-// 2. HISTORY TAB
-// ==========================================
+// ── 2. History Tab ───────────────────────────────────────────────────────────
 class HistoryTab extends StatelessWidget {
   const HistoryTab({super.key});
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DatabaseEvent>(
-      stream: FirebaseDatabase.instance
-          .ref('history')
-          .limitToLast(100)
-          .onValue,
+      stream:
+          FirebaseDatabase.instance.ref('history').limitToLast(100).onValue,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+              child: CircularProgressIndicator(
+                  color: AppColors.green, strokeWidth: 2));
         }
 
         final map =
             snapshot.data?.snapshot.value as Map<dynamic, dynamic>?;
         if (map == null) {
-          return const Center(child: Text("No history data available."));
+          return const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.history_outlined,
+                    size: 48, color: AppColors.textLight),
+                SizedBox(height: 12),
+                Text('No history yet',
+                    style: TextStyle(
+                        color: AppColors.textLight, fontSize: 15)),
+              ],
+            ),
+          );
         }
 
-        var keys = map.keys.toList()..sort();
-        var reversedKeys = keys.reversed.toList();
+        final keys = map.keys.toList()
+          ..sort();
+        final reversed = keys.reversed.toList();
 
-        return ListView.builder(
-          itemCount: reversedKeys.length,
+        return ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          itemCount: reversed.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (context, index) {
-            var key = reversedKeys[index];
-            var item = map[key] as Map<dynamic, dynamic>;
+            final key = reversed[index];
+            final item = map[key] as Map<dynamic, dynamic>;
+            final sensor = item['sensorType'] ?? 'Unknown';
 
-            return Card(
-              margin:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: Colors.green,
-                  child: Icon(Icons.history_edu, color: Colors.white),
-                ),
-                title:
-                    Text("Triggered by: ${item['sensorType'] ?? 'Unknown'}"),
-                subtitle: Text(
-                  "Suhu: ${item['suhu'] ?? '-'} | PPM: ${item['ppm'] ?? '-'} | pH: ${item['ph'] ?? '-'}",
-                ),
-                trailing:
-                    const Icon(Icons.arrow_forward_ios, size: 14),
+            Color dotColor = AppColors.green;
+            if (sensor.toString().toLowerCase().contains('suhu')) {
+              dotColor = AppColors.peach;
+            } else if (sensor.toString().toLowerCase().contains('ppm') ||
+                sensor.toString().toLowerCase().contains('mq')) {
+              dotColor = AppColors.blue;
+            }
+
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  )
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: dotColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Triggered by: $sensor',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.text,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Temp: ${item['suhu'] ?? '-'}°C  ·  PPM: ${item['ppm'] ?? '-'}  ·  pH: ${item['ph'] ?? '-'}',
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.textLight),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             );
           },
@@ -323,70 +605,83 @@ class HistoryTab extends StatelessWidget {
   }
 }
 
-// ==========================================
-// 3. GRAPH TAB
-// ==========================================
+// ── 3. Graph Tab ─────────────────────────────────────────────────────────────
 class GraphTab extends StatefulWidget {
   const GraphTab({super.key});
-
   @override
   State<GraphTab> createState() => _GraphTabState();
 }
 
 class _GraphTabState extends State<GraphTab> {
-  // FIX: Default to a valid metric string
-  String selectedMetric = 'suhu';
+  String _metric = 'suhu';
 
-  double _parse(dynamic value) {
-    if (value == null) return 0.0;
-    if (value is int) return value.toDouble();
-    if (value is double) return value;
-    if (value is String) return double.tryParse(value) ?? 0.0;
-    return 0.0;
-  }
+  static const _metrics = [
+    _MetricOption('suhu',  'Temp °C',  AppColors.peach,  AppColors.peachLight),
+    _MetricOption('ppm',   'Gas PPM',  AppColors.blue,   AppColors.blueLight),
+    _MetricOption('ph',    'pH',       AppColors.green,  AppColors.greenLight),
+  ];
 
   @override
   Widget build(BuildContext context) {
+    final selected = _metrics.firstWhere((m) => m.key == _metric);
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 20),
-        Wrap(
-          spacing: 10,
-          children: [
-            ChoiceChip(
-              label: const Text("Suhu"),
-              selected: selectedMetric == 'suhu',
-              // FIX: was == (comparison) instead of = (assignment)
-              onSelected: (val) =>
-                  setState(() => selectedMetric = 'suhu'),
-            ),
-            ChoiceChip(
-              label: const Text("MQ (PPM)"),
-              selected: selectedMetric == 'ppm',
-              // FIX: was == (comparison) instead of = (assignment)
-              onSelected: (val) =>
-                  setState(() => selectedMetric = 'ppm'),
-            ),
-            ChoiceChip(
-              label: const Text("pH"),
-              selected: selectedMetric == 'ph',
-              // FIX: was == (comparison) instead of = (assignment)
-              onSelected: (val) =>
-                  setState(() => selectedMetric = 'ph'),
-            ),
-          ],
+        // Metric selector
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(
+            children: _metrics.map((m) {
+              final active = m.key == _metric;
+              return GestureDetector(
+                onTap: () => setState(() => _metric = m.key),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: active ? m.color : AppColors.card,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: active
+                        ? [
+                            BoxShadow(
+                              color: m.color.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            )
+                          ]
+                        : [],
+                  ),
+                  child: Text(
+                    m.label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: active ? Colors.white : AppColors.textLight,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
+        // Chart
         Expanded(
           child: Container(
-            padding: const EdgeInsets.only(
-                right: 20, left: 10, bottom: 20, top: 20),
-            margin: const EdgeInsets.all(16),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: const EdgeInsets.fromLTRB(12, 20, 20, 16),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: const [
-                BoxShadow(color: Colors.black12, blurRadius: 8)
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                )
               ],
             ),
             child: StreamBuilder<DatabaseEvent>(
@@ -396,30 +691,39 @@ class _GraphTabState extends State<GraphTab> {
                   .onValue,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const Center(
+                      child: CircularProgressIndicator(
+                          color: AppColors.green, strokeWidth: 2));
                 }
 
-                final map =
-                    snapshot.data?.snapshot.value as Map<dynamic, dynamic>?;
+                final map = snapshot.data?.snapshot.value
+                    as Map<dynamic, dynamic>?;
                 if (map == null || map.isEmpty) {
                   return const Center(
-                      child: Text("Not enough data to graph"));
+                    child: Text('No data yet',
+                        style: TextStyle(
+                            color: AppColors.textLight, fontSize: 14)),
+                  );
                 }
 
-                var sortedKeys = map.keys.toList()..sort();
-                List<FlSpot> spots = [];
-                double xIndex = 0;
-
-                for (var key in sortedKeys) {
-                  var item = map[key] as Map<dynamic, dynamic>;
-                  double yValue = _parse(item[selectedMetric]);
-                  spots.add(FlSpot(xIndex, yValue));
-                  xIndex++;
+                final sortedKeys = map.keys.toList()..sort();
+                final spots = <FlSpot>[];
+                for (var i = 0; i < sortedKeys.length; i++) {
+                  final item =
+                      map[sortedKeys[i]] as Map<dynamic, dynamic>;
+                  spots.add(FlSpot(i.toDouble(), _parse(item[_metric])));
                 }
 
                 return LineChart(
                   LineChartData(
-                    gridData: const FlGridData(show: true),
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      getDrawingHorizontalLine: (_) => FlLine(
+                        color: AppColors.divider,
+                        strokeWidth: 1,
+                      ),
+                    ),
                     titlesData: const FlTitlesData(
                       topTitles: AxisTitles(
                           sideTitles: SideTitles(showTitles: false)),
@@ -427,22 +731,43 @@ class _GraphTabState extends State<GraphTab> {
                           sideTitles: SideTitles(showTitles: false)),
                       bottomTitles: AxisTitles(
                           sideTitles: SideTitles(showTitles: false)),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 36,
+                          getTitlesWidget: _leftTitle,
+                        ),
+                      ),
                     ),
-                    borderData: FlBorderData(
-                        show: true,
-                        border:
-                            Border.all(color: Colors.grey.shade300)),
+                    borderData: FlBorderData(show: false),
                     lineBarsData: [
                       LineChartBarData(
                         spots: spots,
                         isCurved: true,
-                        color: Colors.blueAccent,
-                        barWidth: 4,
+                        curveSmoothness: 0.35,
+                        color: selected.color,
+                        barWidth: 3,
                         isStrokeCapRound: true,
-                        dotData: const FlDotData(show: true),
+                        dotData: FlDotData(
+                          show: true,
+                          getDotPainter: (spot, _, __, ___) =>
+                              FlDotCirclePainter(
+                            radius: 4,
+                            color: AppColors.card,
+                            strokeWidth: 2,
+                            strokeColor: selected.color,
+                          ),
+                        ),
                         belowBarData: BarAreaData(
                           show: true,
-                          color: Colors.blueAccent.withOpacity(0.2),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              selected.color.withOpacity(0.2),
+                              selected.color.withOpacity(0.0),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -455,4 +780,21 @@ class _GraphTabState extends State<GraphTab> {
       ],
     );
   }
+}
+
+Widget _leftTitle(double value, TitleMeta meta) {
+  return Text(
+    value.toInt().toString(),
+    style:
+        const TextStyle(fontSize: 10, color: AppColors.textLight),
+    textAlign: TextAlign.right,
+  );
+}
+
+class _MetricOption {
+  final String key;
+  final String label;
+  final Color color;
+  final Color bgColor;
+  const _MetricOption(this.key, this.label, this.color, this.bgColor);
 }

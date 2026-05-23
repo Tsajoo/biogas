@@ -22,6 +22,8 @@ jobs:
           cache: false
 
       # ── 3. Regenerate native platforms ─────────────────────────────────────
+      # --org com.example --project-name biogas → bundle ID = com.example.biogas
+      # This matches your Firebase project exactly.
       - name: Regenerate iOS & Android
         run: |
           rm -rf ios/ android/
@@ -29,11 +31,18 @@ jobs:
 
       # ── 4. Patch project.pbxproj BEFORE Flutter reads it ───────────────────
       #
-      #  Flutter's Dart tooling reads project.pbxproj and throws the
-      #  "Development Team required" error BEFORE invoking xcodebuild.
-      #  The check is bypassed if CODE_SIGNING_ALLOWED = NO exists.
-      #  We use a Python script for reliable multi-line pbxproj editing
-      #  rather than fragile sed substitutions.
+      #  ROOT CAUSE OF "Development Team required" ERROR:
+      #  Flutter's Dart tooling reads project.pbxproj itself and throws this
+      #  error before invoking xcodebuild. Setting CODE_SIGNING_ALLOWED=NO
+      #  in every build configuration bypasses the check entirely.
+      #
+      #  ROOT CAUSE OF 47KB / "unable to locate main binary" ERROR:
+      #  In the previous workflow, we called xcodebuild directly. This skips
+      #  Flutter's `flutter assemble` step which compiles Dart to native binary.
+      #  The app bundle was just an empty shell with no executable inside.
+      #  FIX: We use `flutter build ios --release --no-codesign` which runs
+      #  assemble first, then xcodebuild. We just need pbxproj patched so
+      #  Flutter does not bail out on the signing check before it gets there.
       #
       - name: Patch project.pbxproj — disable signing
         run: |
@@ -43,26 +52,18 @@ jobs:
           pbx = pathlib.Path("ios/Runner.xcodeproj/project.pbxproj")
           txt = pbx.read_text()
 
-          # For every XCBuildConfiguration block, inject/overwrite signing keys.
-          # Pattern matches the settings dict inside each configuration block.
           def patch_config_block(match):
               block = match.group(0)
               overrides = {
-                  "CODE_SIGNING_ALLOWED":            "NO",
-                  "CODE_SIGNING_REQUIRED":           "NO",
-                  "CODE_SIGN_STYLE":                 "Manual",
-                  "CODE_SIGN_IDENTITY":              '""',
-                  "PROVISIONING_PROFILE_SPECIFIER":  '""',
-                  "DEVELOPMENT_TEAM":                '""',
+                  "CODE_SIGNING_ALLOWED":           "NO",
+                  "CODE_SIGNING_REQUIRED":          "NO",
+                  "CODE_SIGN_STYLE":                "Manual",
+                  "CODE_SIGN_IDENTITY":             '""',
+                  "PROVISIONING_PROFILE_SPECIFIER": '""',
+                  "DEVELOPMENT_TEAM":               '""',
               }
               for key, val in overrides.items():
-                  # Replace existing value if present
-                  block, n = re.subn(
-                      rf'{key} = [^;]+;',
-                      f'{key} = {val};',
-                      block
-                  )
-                  # Inject if not present (insert before closing brace of settings)
+                  block, n = re.subn(rf'{key} = [^;]+;', f'{key} = {val};', block)
                   if n == 0:
                       block = block.replace(
                           "buildSettings = {",
@@ -70,28 +71,20 @@ jobs:
                       )
               return block
 
-          # Match every buildSettings block
-          txt = re.sub(
-              r'buildSettings = \{[^}]*\}',
-              patch_config_block,
-              txt,
-              flags=re.DOTALL
-          )
-
-          # Also flip ProvisioningStyle in TargetAttributes
+          txt = re.sub(r'buildSettings = \{[^}]*\}', patch_config_block, txt, flags=re.DOTALL)
           txt = re.sub(r'ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;', txt)
 
           pbx.write_text(txt)
-          print("✅ project.pbxproj patched")
+          print("pbxproj patched OK")
           PYEOF
 
       # ── 5. Patch Info.plist — ATS + background modes ───────────────────────
       #
-      #  The ios/ folder was just recreated so we must re-apply these fixes
-      #  every run. Without NSAllowsArbitraryLoads, Firebase network calls
-      #  silently fail on iOS and the app shows a white/frozen screen.
+      #  ios/ is recreated every run so we must re-apply these every time.
+      #  Without NSAllowsArbitraryLoads, Firebase HTTPS calls silently fail
+      #  on jailbroken iOS producing a white screen on launch.
       #
-      - name: Patch Info.plist — ATS & background modes
+      - name: Patch Info.plist
         run: |
           python3 - <<'PYEOF'
           import plistlib, pathlib
@@ -100,11 +93,9 @@ jobs:
           with plist_path.open("rb") as f:
               data = plistlib.load(f)
 
-          # FIX: Allow all HTTPS traffic (Firebase requires this on jailbroken iOS)
           data.setdefault("NSAppTransportSecurity", {})
           data["NSAppTransportSecurity"]["NSAllowsArbitraryLoads"] = True
 
-          # FIX: Keep Firebase streams alive in background
           modes = data.setdefault("UIBackgroundModes", [])
           for mode in ["fetch", "remote-notification"]:
               if mode not in modes:
@@ -113,28 +104,16 @@ jobs:
           with plist_path.open("wb") as f:
               plistlib.dump(data, f, fmt=plistlib.FMT_XML)
 
-          print("✅ Info.plist patched")
+          print("Info.plist patched OK")
           PYEOF
 
       # ── 6. Install pub dependencies ────────────────────────────────────────
       - name: Install Flutter dependencies
         run: flutter pub get
 
-      # ── 7. Generate Flutter xcconfig files ─────────────────────────────────
-      #
-      #  Creates Flutter/Generated.xcconfig and flutter_export_environment.sh
-      #  which xcodebuild needs. We bypass the signing check by passing
-      #  extra xcode-build-settings on the command line.
-      #
-      - name: Generate Flutter config (no codesign)
-        run: |
-          flutter build ios --config-only --no-codesign \
-            --dart-define=FLUTTER_BUILD_MODE=release
-
-      # ── 8. Set up Podfile ──────────────────────────────────────────────────
+      # ── 7. Configure Podfile ───────────────────────────────────────────────
       - name: Configure Podfile
         run: |
-          # Remove any existing post_install block Flutter may have added
           sed -i '' '/^post_install do |installer|/,/^end$/d' ios/Podfile
 
           cat << 'EOF' >> ios/Podfile
@@ -143,9 +122,7 @@ jobs:
             installer.pods_project.targets.each do |target|
               flutter_additional_ios_build_settings(target)
               target.build_configurations.each do |config|
-                # Fix Firebase strict header error
                 config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
-                # Belt-and-suspenders: strip signing from all pods too
                 config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
                 config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
                 config.build_settings['CODE_SIGN_IDENTITY'] = ''
@@ -154,59 +131,56 @@ jobs:
           end
           EOF
 
-      # ── 9. Pod install ─────────────────────────────────────────────────────
+      # ── 8. Pod install ─────────────────────────────────────────────────────
       - name: Pod install
-        run: |
-          cd ios
-          pod install --repo-update
+        run: cd ios && pod install --repo-update
 
-      # ── 10. Build with xcodebuild directly ─────────────────────────────────
+      # ── 9. Build with Flutter (compiles Dart binary + calls xcodebuild) ────
       #
-      #  We call xcodebuild directly instead of `flutter build ios --release`
-      #  to have full control over signing flags. Flutter's build command
-      #  re-checks signing even with --no-codesign on some versions.
+      #  IMPORTANT: Do NOT replace this with a raw xcodebuild call.
+      #  flutter build ios runs flutter assemble first, which compiles the
+      #  Dart code into a native binary and embeds it into the app bundle.
+      #  Calling xcodebuild directly skips this step and produces a 47kb
+      #  empty shell with no main binary (parse error 303).
       #
-      - name: Build unsigned app with xcodebuild
-        run: |
-          xcodebuild \
-            -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath "$PWD/build/derived" \
-            CONFIGURATION_BUILD_DIR="$PWD/build/ios/iphoneos" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGN_ENTITLEMENTS="" \
-            DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            build \
-            | xcpretty || true
-          # xcpretty prettifies output; `|| true` prevents it masking real errors.
-          # If this step fails, re-run without `| xcpretty` to see raw logs.
+      - name: Build unsigned app
+        run: flutter build ios --release --no-codesign
 
-      # ── 11. Verify the .app was produced ───────────────────────────────────
-      - name: Verify Runner.app exists
+      # ── 10. Verify Runner.app has a real binary ────────────────────────────
+      - name: Verify binary exists in app bundle
         run: |
-          APP_PATH="build/ios/iphoneos/Runner.app"
-          if [ ! -d "$APP_PATH" ]; then
-            echo "❌ Runner.app not found. Build likely failed silently."
-            echo "── Derived data logs ──"
-            find build/derived -name "*.log" | head -5 | xargs tail -n 40
+          APP="build/ios/iphoneos/Runner.app"
+          BINARY="$APP/Runner"
+
+          if [ ! -d "$APP" ]; then
+            echo "Runner.app not found at $APP"
             exit 1
           fi
-          echo "✅ Runner.app found: $(du -sh $APP_PATH)"
 
-      # ── 12. Package as IPA ─────────────────────────────────────────────────
+          if [ ! -f "$BINARY" ]; then
+            echo "Main binary missing from bundle"
+            ls -lah "$APP"
+            exit 1
+          fi
+
+          SIZE=$(du -sh "$APP" | cut -f1)
+          BIN_SIZE=$(du -sh "$BINARY" | cut -f1)
+          echo "Runner.app: $SIZE | Binary: $BIN_SIZE"
+
+          BIN_BYTES=$(stat -f%z "$BINARY")
+          if [ "$BIN_BYTES" -lt 1000000 ]; then
+            echo "Warning: binary is suspiciously small (${BIN_BYTES} bytes) — check build logs"
+          fi
+
+      # ── 11. Package as IPA ─────────────────────────────────────────────────
       - name: Package IPA
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
           zip -r biogas.ipa Payload/
-          echo "✅ IPA size: $(du -sh biogas.ipa)"
+          echo "Final IPA: $(du -sh biogas.ipa)"
 
-      # ── 13. Upload artifact ────────────────────────────────────────────────
+      # ── 12. Upload artifact ────────────────────────────────────────────────
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
