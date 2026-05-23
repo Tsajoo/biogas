@@ -5,35 +5,43 @@ import 'package:fl_chart/fl_chart.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   try {
-    // We pass your exact credentials directly via Dart code.
-    // This bypasses the Xcode file-linking issue entirely!
     await Firebase.initializeApp(
       options: const FirebaseOptions(
         apiKey: "AIzaSyC-siZ2Z3VQU3bbMjsfflauRzZRdjfiEKA",
         appId: "1:25429940980:ios:45d0365544b4624c755ca1",
         messagingSenderId: "25429940980",
         projectId: "biogas11",
-        databaseURL: "https://biogas11-default-rtdb.asia-southeast1.firebasedatabase.app",
+        databaseURL:
+            "https://biogas11-default-rtdb.asia-southeast1.firebasedatabase.app",
         storageBucket: "biogas11.firebasestorage.app",
       ),
+    ).timeout(
+      const Duration(seconds: 10),
+      onTimeout: () => throw Exception(
+          "Firebase init timed out — check network / ATS settings"),
     );
-    
-    // Enable local caching
+
+    // FIX: Only keep specific paths synced, NOT the root.
+    // Syncing root ref causes a massive data fetch on startup = white screen hang.
     FirebaseDatabase.instance.setPersistenceEnabled(true);
-    FirebaseDatabase.instance.ref().keepSynced(true);
+    FirebaseDatabase.instance.ref('realtime').keepSynced(true);
+    FirebaseDatabase.instance.ref('history').keepSynced(true);
+    FirebaseDatabase.instance.ref('config').keepSynced(true);
   } catch (e) {
-    // If anything fails, this forces an explicit error screen instead of a white freeze
     runApp(MaterialApp(
       home: Scaffold(
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24.0),
             child: Text(
-              "Firebase Init Crash:\n$e", 
-              style: const TextStyle(color: Colors.red, fontSize: 16, fontWeight: FontWeight.bold),
-              textAlign: Center,
+              "Firebase Init Crash:\n$e",
+              style: const TextStyle(
+                  color: Colors.red,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
             ),
           ),
         ),
@@ -126,8 +134,10 @@ class RealtimeTab extends StatelessWidget {
     return 0.0;
   }
 
-  void _editThreshold(BuildContext context, String key, double currentValue) {
-    TextEditingController ctrl = TextEditingController(text: currentValue.toString());
+  void _editThreshold(
+      BuildContext context, String key, double currentValue) {
+    TextEditingController ctrl =
+        TextEditingController(text: currentValue.toString());
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -146,7 +156,9 @@ class RealtimeTab extends StatelessWidget {
             onPressed: () {
               double? newValue = double.tryParse(ctrl.text);
               if (newValue != null) {
-                FirebaseDatabase.instance.ref('config').update({key: newValue});
+                FirebaseDatabase.instance
+                    .ref('config')
+                    .update({key: newValue});
               }
               Navigator.pop(ctx);
             },
@@ -157,7 +169,8 @@ class RealtimeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildSensorCard(BuildContext context, String title, double value, double threshold, String configKey) {
+  Widget _buildSensorCard(BuildContext context, String title, double value,
+      double threshold, String configKey) {
     bool isBahaya = value > threshold;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -167,29 +180,39 @@ class RealtimeTab extends StatelessWidget {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            Text(title,
+                style: const TextStyle(
+                    fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
-            Text(value.toStringAsFixed(1), style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w500)),
+            Text(value.toStringAsFixed(1),
+                style: const TextStyle(
+                    fontSize: 36, fontWeight: FontWeight.w500)),
             const SizedBox(height: 10),
             Container(
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 20),
+              padding:
+                  const EdgeInsets.symmetric(vertical: 6, horizontal: 20),
               decoration: BoxDecoration(
                 color: isBahaya ? Colors.red : Colors.green,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
                 isBahaya ? "BAHAYA" : "AMAN",
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16),
               ),
             ),
             const Divider(height: 30),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Threshold: ${threshold.toStringAsFixed(1)}", style: TextStyle(color: Colors.grey[700])),
+                Text("Threshold: ${threshold.toStringAsFixed(1)}",
+                    style: TextStyle(color: Colors.grey[700])),
                 IconButton(
                   icon: const Icon(Icons.edit, color: Colors.blue),
-                  onPressed: () => _editThreshold(context, configKey, threshold),
+                  onPressed: () =>
+                      _editThreshold(context, configKey, threshold),
                 )
               ],
             )
@@ -211,12 +234,16 @@ class RealtimeTab extends StatelessWidget {
               return const Center(child: CircularProgressIndicator());
             }
 
-            final configMap = configSnap.data?.snapshot.value as Map<dynamic, dynamic>? ?? {};
+            final configMap =
+                configSnap.data?.snapshot.value as Map<dynamic, dynamic>? ??
+                    {};
             double suhuThreshold = _parse(configMap['suhuThreshold']);
             double ppmThreshold = _parse(configMap['ppmThreshold']);
             double phThreshold = _parse(configMap['phThreshold']);
 
-            final realtimeMap = realtimeSnap.data?.snapshot.value as Map<dynamic, dynamic>? ?? {};
+            final realtimeMap =
+                realtimeSnap.data?.snapshot.value as Map<dynamic, dynamic>? ??
+                    {};
             double suhu = _parse(realtimeMap['suhu']);
             double ppm = _parse(realtimeMap['ppm']);
             double ph = _parse(realtimeMap['ph']);
@@ -224,9 +251,12 @@ class RealtimeTab extends StatelessWidget {
             return ListView(
               padding: const EdgeInsets.only(top: 10, bottom: 20),
               children: [
-                _buildSensorCard(context, "Suhu (°C)", suhu, suhuThreshold, "suhuThreshold"),
-                _buildSensorCard(context, "MQ Sensor (PPM)", ppm, ppmThreshold, "ppmThreshold"),
-                _buildSensorCard(context, "pH", ph, phThreshold, "phThreshold"),
+                _buildSensorCard(
+                    context, "Suhu (°C)", suhu, suhuThreshold, "suhuThreshold"),
+                _buildSensorCard(context, "MQ Sensor (PPM)", ppm, ppmThreshold,
+                    "ppmThreshold"),
+                _buildSensorCard(
+                    context, "pH", ph, phThreshold, "phThreshold"),
               ],
             );
           },
@@ -245,13 +275,17 @@ class HistoryTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DatabaseEvent>(
-      stream: FirebaseDatabase.instance.ref('history').limitToLast(100).onValue,
+      stream: FirebaseDatabase.instance
+          .ref('history')
+          .limitToLast(100)
+          .onValue,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final map = snapshot.data?.snapshot.value as Map<dynamic, dynamic>?;
+        final map =
+            snapshot.data?.snapshot.value as Map<dynamic, dynamic>?;
         if (map == null) {
           return const Center(child: Text("No history data available."));
         }
@@ -266,17 +300,20 @@ class HistoryTab extends StatelessWidget {
             var item = map[key] as Map<dynamic, dynamic>;
 
             return Card(
-              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              margin:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: ListTile(
                 leading: const CircleAvatar(
                   backgroundColor: Colors.green,
                   child: Icon(Icons.history_edu, color: Colors.white),
                 ),
-                title: Text("Triggered by: ${item['sensorType'] ?? 'Unknown'}"),
+                title:
+                    Text("Triggered by: ${item['sensorType'] ?? 'Unknown'}"),
                 subtitle: Text(
                   "Suhu: ${item['suhu'] ?? '-'} | PPM: ${item['ppm'] ?? '-'} | pH: ${item['ph'] ?? '-'}",
                 ),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                trailing:
+                    const Icon(Icons.arrow_forward_ios, size: 14),
               ),
             );
           },
@@ -297,6 +334,7 @@ class GraphTab extends StatefulWidget {
 }
 
 class _GraphTabState extends State<GraphTab> {
+  // FIX: Default to a valid metric string
   String selectedMetric = 'suhu';
 
   double _parse(dynamic value) {
@@ -318,40 +356,54 @@ class _GraphTabState extends State<GraphTab> {
             ChoiceChip(
               label: const Text("Suhu"),
               selected: selectedMetric == 'suhu',
-              onSelected: (val) => setState(() => selectedMetric = 'suhu'),
+              // FIX: was == (comparison) instead of = (assignment)
+              onSelected: (val) =>
+                  setState(() => selectedMetric = 'suhu'),
             ),
             ChoiceChip(
               label: const Text("MQ (PPM)"),
               selected: selectedMetric == 'ppm',
-              onSelected: (val) => setState(() => selectedMetric == 'ppm'),
+              // FIX: was == (comparison) instead of = (assignment)
+              onSelected: (val) =>
+                  setState(() => selectedMetric = 'ppm'),
             ),
             ChoiceChip(
               label: const Text("pH"),
               selected: selectedMetric == 'ph',
-              onSelected: (val) => setState(() => selectedMetric == 'ph'),
+              // FIX: was == (comparison) instead of = (assignment)
+              onSelected: (val) =>
+                  setState(() => selectedMetric = 'ph'),
             ),
           ],
         ),
         const SizedBox(height: 20),
         Expanded(
           child: Container(
-            padding: const EdgeInsets.only(right: 20, left: 10, bottom: 20, top: 20),
+            padding: const EdgeInsets.only(
+                right: 20, left: 10, bottom: 20, top: 20),
             margin: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
+              boxShadow: const [
+                BoxShadow(color: Colors.black12, blurRadius: 8)
+              ],
             ),
             child: StreamBuilder<DatabaseEvent>(
-              stream: FirebaseDatabase.instance.ref('history').limitToLast(20).onValue,
+              stream: FirebaseDatabase.instance
+                  .ref('history')
+                  .limitToLast(20)
+                  .onValue,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final map = snapshot.data?.snapshot.value as Map<dynamic, dynamic>?;
+                final map =
+                    snapshot.data?.snapshot.value as Map<dynamic, dynamic>?;
                 if (map == null || map.isEmpty) {
-                  return const Center(child: Text("Not enough data to graph"));
+                  return const Center(
+                      child: Text("Not enough data to graph"));
                 }
 
                 var sortedKeys = map.keys.toList()..sort();
@@ -367,13 +419,19 @@ class _GraphTabState extends State<GraphTab> {
 
                 return LineChart(
                   LineChartData(
-                    gridData: FlGridData(show: true),
-                    titlesData: FlTitlesData(
-                      topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    gridData: const FlGridData(show: true),
+                    titlesData: const FlTitlesData(
+                      topTitles: AxisTitles(
+                          sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: AxisTitles(
+                          sideTitles: SideTitles(showTitles: false)),
+                      bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(showTitles: false)),
                     ),
-                    borderData: FlBorderData(show: true, border: Border.all(color: Colors.grey.shade300)),
+                    borderData: FlBorderData(
+                        show: true,
+                        border:
+                            Border.all(color: Colors.grey.shade300)),
                     lineBarsData: [
                       LineChartBarData(
                         spots: spots,
@@ -381,7 +439,7 @@ class _GraphTabState extends State<GraphTab> {
                         color: Colors.blueAccent,
                         barWidth: 4,
                         isStrokeCapRound: true,
-                        dotData: FlDotData(show: true),
+                        dotData: const FlDotData(show: true),
                         belowBarData: BarAreaData(
                           show: true,
                           color: Colors.blueAccent.withOpacity(0.2),
